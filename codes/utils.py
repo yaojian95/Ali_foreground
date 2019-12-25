@@ -41,25 +41,27 @@ def Power_spectrum(maps,R, lmax):
     Input:
     maps with multi-frequencies IQU sky maps. 
     Galactic plane cut for calculating the power spectrum.
-    lamx.  
+    lmax.  
 
-    need to be generalized to E B PS simulantaneously. 
+    Return: EE and BB cross power spectrum. 
+    Shape (2, lmax, nf, nf)
     '''
     n_f = len(maps)
-    cl = np.ones((n_f*n_f, lmax +1)); Cl = np.zeros((lmax+1, n_f, n_f))
+    cl = np.ones((2, n_f*n_f, lmax +1)); Cl = np.zeros((2, lmax+1, n_f, n_f))
     k = 0
     for i in range(n_f):
         for j in range(n_f):
             
             if i >= j :
-                cross_ps = hp.anafast(maps[i], maps[j], lmax = lmax, gal_cut=R, nspec=3)
+                cross_ps = hp.anafast(maps[i], maps[j], lmax = lmax, gal_cut=R, nspec=3) ## TT, EE, BB
             else:
-                cross_ps = np.zeros((3, lmax+1)) ## TT, EE, BB
-            cl[k] = cross_ps[2]  ## calculate the B_mode power spectrum 
+                cross_ps = np.zeros((3, lmax+1)) 
+            cl[0][k] = cross_ps[1]; cl[1][k] = cross_ps[2]  ## calculate the E and B_mode power spectrum 
             k += 1
+            
     for l in range(lmax+1):
-        Cl[l, 0:n_f , 0:n_f] = cl[:,l].reshape(n_f, n_f)
-        Cl[l] += Cl[l].T - np.diag(Cl[l].diagonal()) 
+        Cl[0, l, : , :] = cl[0, :,l].reshape(n_f, n_f); Cl[1, l, : , :] = cl[1, :,l].reshape(n_f, n_f)
+        Cl[0, l] += Cl[0, l].T - np.diag(Cl[0, l].diagonal()) ; Cl[1, l] += Cl[1, l].T - np.diag(Cl[1, l].diagonal()) 
     return Cl
 
 def m_l(lmax, l):
