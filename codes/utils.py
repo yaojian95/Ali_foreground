@@ -130,7 +130,7 @@ def Mask_0(maps):
             for j in range(3):
                 maps[i,j][mask_index0] = 0
     elif _ndim == 2: ### (3, npix)
-        for j in range(3):
+        for j in range(maps.shape[0]):
             maps[j][mask_index0] = 0
     
     else: ### (npix)
