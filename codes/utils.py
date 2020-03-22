@@ -6,13 +6,44 @@ With Yun Zheng
 
 import numpy as np
 import healpy as hp
+import matplotlib.pyplot as plt
+plt.rcParams['figure.figsize'] = (10.0, 8.0)
 
-def bin_l(cl, L, Q, l2 = False):
+##    Only for 1-field map
+def plot_ps(maps):
+    _nside = int(np.sqrt(len(maps)/12))
+    cls = hp.anafast(maps, lmax = 2*_nside);
+    _ell = np.arange(len(cls)); _ell2 = _ell[2:]
+    plt.loglog(_ell2, _ell2*(_ell2+1)/2/np.pi*cls[2:])
+    
+def deconv(maps, beam_in, beam_out, lmax):
+    ''' 
+    Beam in unit of arc-miniute.
+    This function changes the value of the input map itself.
+    
+    '''
+    
+    _maps = np.copy(maps)
+    for j in range(1,3): ### only for Q\U;
+        _maps[j] = hp.sphtfunc.decovlving(_maps[j], fwhm = beam_in/60/180*np.pi, lmax = lmax, verbose = False)
+        _maps[j] = hp.smoothing(_maps[j], fwhm = beam_out/60/180*np.pi, lmax = lmax, verbose = False)
+    return _maps
+
+
+def smooth(maps, beam_out, lmax):
+    _maps = np.copy(maps);
+    for j in range(1,3):                        ###for Q and U. Exclude I.
+        _maps[j] = hp.smoothing(_maps[j], fwhm = beam_out/60/180*np.pi, lmax = lmax, verbose = False)
+    return _maps
+
+
+def bin_l(cl, L, Q, l2 = False, bin_scheme = None):
     ''' 
     
     cl, L, Q(bin_number); no np.mean
     
     '''
+    ### some problmes exit when Q = L !!! 2020-03-14
     if len(cl.shape) > 2 :
         bin_averages = np.zeros((Q, cl.shape[1], cl.shape[1]))
     else:
@@ -77,9 +108,34 @@ def m_l(lmax, l):
 
 ali_ma = hp.read_map('/smc/jianyao/Ali_maps/ali_mask_wo_edge.fits')#, verbose=False)
 def Mask(maps): 
+    
+    '''
+    masked value = hp.unseen()
+    '''
     maps_ma = hp.ma(maps)
     maps_ma.mask = np.logical_not(ali_ma)
     return maps_ma
+
+def Mask_0(maps):
+    
+    '''
+    The masked values are equal to 0.
+    '''
+    index0 = np.arange(len(ali_ma));
+    mask_index0 = index0[np.where(ali_ma<1)]
+    
+    _ndim = len(maps.shape)
+    if _ndim > 2:  ### (Nf, 3, npix)
+        for i in range(maps.shape[0]):
+            for j in range(3):
+                maps[i,j][mask_index0] = 0
+    elif _ndim == 2: ### (3, npix)
+        for j in range(3):
+            maps[j][mask_index0] = 0
+    
+    else: ### (npix)
+        maps[mask_index0] = 0
+    return maps
 
 def l2(ell):
     '''
