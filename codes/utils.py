@@ -116,11 +116,14 @@ def Mask(maps):
     maps_ma.mask = np.logical_not(ali_ma)
     return maps_ma
 
-def Mask_0(maps):
+def Mask_0(maps_raw):
     
     '''
     The masked values are equal to 0.
+    
     '''
+    maps = np.copy(maps_raw)
+    
     index0 = np.arange(len(ali_ma));
     mask_index0 = index0[np.where(ali_ma<1)]
     
