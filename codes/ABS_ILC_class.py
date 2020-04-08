@@ -1,0 +1,234 @@
+import healpy as hp
+import numpy as np
+from numpy import linalg as LA
+import pymaster as nmt
+import utils.Select_fre as Select_fre
+
+class ABS(object):
+    
+    def __init__(self, nside, lmax, bin_w, beam = None):
+        
+        self.nside = nside; self.lmax = lmax;
+
+        self.b = nmt.NmtBin(self.nside, nlb=bin_w, lmax=self.lmax)
+    
+        self.ell_n = self.b.get_effective_ells(); self.lbin = len(self.ell_n); 
+    
+    def run(self, signal, noise, noise_sigma, sel):
+        
+        
+        _nf = len(sel); Q = self.lbin
+        s = 5.00827749e-5; Delta = 10*s; f = []; Evals = np.ones((Q,_nf)); E_cut = 1
+
+        D_B_n = np.zeros(Q);
+        
+        #select part of the cross power spectrum 
+        D = Select_fre(signal, sel); 
+        nl_bin_mean = Select_fre(noise, sel); nl_bin_std = Select_fre(noise_sigma, sel)
+        sigmaD = np.zeros(Q)
+        
+        for i in range(Q):
+            f_q = np.ones(_nf)
+            for j in range(_nf):
+                f_q[j] = f_q[j]/np.sqrt(nl_bin_std[i][j, j])   ##nl_std_all.shape = (2, Q, Nf, Nf)
+            f.append(f_q) 
+    
+        for l in range(Q):
+            D[l] = D[l] - nl_bin_mean[l] 
+            for i in range(_nf): 
+                for j in range(_nf):
+                    D[l][i,j] = D[l][i,j]/np.sqrt(nl_bin_std[l][i, i]*nl_bin_std[l][j, j]) + Delta*f[l][i]*f[l][j] 
+    
+        for l in range(0,Q): 
+            e_vals,E = LA.eig(D[l])
+            Evals[l,:] = e_vals        
+    
+            for i in range(_nf):
+                E[:,i]=E[:,i]/LA.norm(E[:,i])**2  
+    
+            D_B_l = 0; sigmaD_l = 0; G = np.ones(_nf)
+            for i in range(_nf):
+                if e_vals[i]>=E_cut:
+                    G_i = np.dot(f[l],E[:,i])
+                    D_B_l += (G_i**2/e_vals[i])
+    
+            D_B_l = 1.0/ D_B_l - Delta
+            D_B_n[l] = D_B_l
+         
+        return D_B_n
+    
+    
+'''
+ILC method to do the component separation.
+Both ILC in harmonic space and pixel space are defined.
+
+'''
+import logging as log
+import numpy as np
+import matplotlib.pyplot as plt
+import pymaster as nmt
+### ILC in l-space
+
+class ILC_L(object):
+    
+    def __init__(self, nside, lmax, bin_w, beam = None):
+        
+        '''
+        ILC in spherical space to do the foreground removal.
+        
+        Parameters:
+        
+        singal : numpy.ndarray
+        The total CROSS power-sepctrum matrix,
+        with global size (N_modes, N_freq, N_freq).
+        * N_freq: number of frequency bands
+        * N_modes: number of angular modes
+        '''
+        
+        self.nside = nside; self.lmax = lmax;
+        
+        self.b = nmt.NmtBin(self.nside, nlb=bin_w, lmax=self.lmax)
+        
+        self.ell_n = self.b.get_effective_ells(); self.lbin = len(self.ell_n); self.el2 = self.l2(self.ell_n)
+        
+    def l2(self, ell):
+        '''
+        get the l^2/np.pi
+        '''
+        
+        return ell*(ell+1)/2/np.pi
+    
+    # calculate the weight for each multipole bin
+    
+    #def __call__(self, sel):
+##        log.debug('@ abspipe::__call__')
+        #return self.run(sel)    
+    
+    def run(self, signal, noise, sel, return_maps = False, return_weights = False):
+        
+        '''
+        ILC class call function.  
+        '''
+        total_bin = Select_fre(signal, sel); 
+        noise_bin = Select_fre(noise, sel);
+        
+        _nf = len(sel)
+        
+        e = np.matrix(np.ones(_nf)); cl_ilc = np.zeros(self.lbin); noise_ilc = np.zeros(self.lbin)
+        W = np.matrix(np.zeros((self.lbin, _nf)))  # Q = lmax/bins
+        
+        for l in range(self.lbin):
+            
+            norm = e*np.linalg.pinv((total_bin[l]))*e.T
+           
+            W[l,:] = e*np.linalg.pinv((total_bin[l]))/norm   
+        
+        for i in range(self.lbin):
+                    
+            noise_ilc[i] = W[i,:]*(noise_bin[i])*np.transpose(W[i,:])  
+            cl_ilc[i] = W[i,:]*(total_bin[i])*np.transpose(W[i,:]) - noise_ilc[i]
+            
+        
+        if return_weights:
+            self.w = W
+        
+        return cl_ilc
+    
+        
+    def ILC_maps(self, total_mask, W):
+        
+        '''
+        Apply the ILC weights in harmonic space to the alms to get the cleaned maps' alms,
+        which are then transformed back to pixels.
+        
+        !!! in this case, bin_width = 1 !!!
+        '''
+        
+        m_num = int((1 + lmax)*(lmax+1 -1)/2) # the number of alm of lmax=l for m >= 0; m = 0,1 for l = 1; m = 0,1,2 for l = 2.
+        alm_Q = np.zeros((Nf, m_num), dtype = 'complex128'); alm_U = np.zeros((Nf, m_num), dtype = 'complex128')
+        
+        for i in range(Nf):
+            alm_Q[i] = hp.map2alm(total_mask[i], lmax = lmax-1)[1]; # 95GHz, 150GHz, 353GHz
+            alm_U[i] = hp.map2alm(total_mask[i], lmax = lmax-1)[2];   
+            
+        alm_Q_clean = np.zeros(m_num,dtype = 'complex128'); alm_U_clean = np.zeros(m_num, dtype = 'complex128')
+        
+        for l in np.arange(lmax):
+            alm_Q_clean[m_l(lmax - 1, l)] = np.dot(np.array(W[l, :]),alm_Q[:,m_l(lmax - 1, l)])[0] #np.dot(np.array(weight[l, :]),alm_Q[:,m_l(lmax, l)])[0]#
+            alm_U_clean[m_l(lmax - 1, l)] = np.dot(np.array(W[l, :]),alm_U[:,m_l(lmax - 1, l)])[0]
+            
+        alm_Q_clean[m_l(lmax, 0)] = 0; alm_Q_clean[m_l(lmax, 1)] = 0
+        alm_U_clean[m_l(lmax, 0)] = 0; alm_U_clean[m_l(lmax, 1)] = 0    
+        
+        almT = np.zeros_like(alm_Q_clean)
+        cmb_clean = hp.alm2map(np.row_stack((almT, alm_Q_clean, alm_U_clean)), nside = nside, lmax = lmax - 1)   
+        
+        return cmb_clean
+            
+    #def plot_weight():
+        #Ell = binell()
+        #for i in range(Nf):
+            #plt.plot(Ell, W[:, i], label = '%s'%fre[i])
+   
+### ILC in pixel space         
+class ILC_P(object):
+    
+    '''
+    ILC in pixel space to do the foreground removal.
+    '''
+    
+    def __init__(self, signal_maps, nl, mask_in):
+        
+        self.signal = signal_maps; self.nl =nl; # use nl to do the noise debias.nl is from the ensemble average of noise reanlizations
+        
+        self.mask = mask_in; pix_list = np.arange(len(mask_in)); self.nside = hp.npix2nside(len(mask_in))
+        
+        self.avai_index = pix_list[np.where(mask == 1)] # the pixel index of the remained region 
+            
+        self.norm = 1.0/len(self.avai_index)
+        
+    #def __call__(self, psbin, absbin):
+##        log.debug('@ abspipe::__call__')
+        #return self.run(psbin, absbin)
+    
+    def run(self): 
+        '''
+        ILC in pixel space.
+        
+        return: the cleaned CMB maps, in which only QU components are cleaned and I map is not considered. 
+        '''
+    
+        Nf = len(self.signal)
+        
+        total_Q = self.signal[:,1,:]; total_U = self.signal[:,2,:];
+    
+        Cov_Q = np.zeros((Nf, Nf)); w_Q = np.zeros(Nf)
+        Cov_U = np.zeros((Nf, Nf)); w_U = np.zeros(Nf)
+    
+        for i in range(Nf):
+            for j in range(Nf):
+                
+                tq_i = total_Q[i][self.avai_index] - np.mean(total_Q[i][self.avai_index]);
+                tq_j = total_Q[j][self.avai_index] - np.mean(total_Q[j][self.avai_index])
+                
+                tu_i = total_U[i][self.avai_index] - np.mean(total_U[i][self.avai_index]);
+                tu_j = total_U[j][self.avai_index] - np.mean(total_U[j][self.avai_index])
+                
+                Cov_Q[i, j] = np.dot(tq_i, tq_j)*self.norm
+                Cov_U[i, j] = np.dot(tu_i, tu_j)*self.norm
+    
+        Cov_Q_inv = np.linalg.pinv(Cov_Q)
+        Cov_U_inv = np.linalg.pinv(Cov_U)
+    
+    
+        for i in range(Nf):
+            w_Q[i] = np.sum(Cov_Q_inv[i,:])/np.sum(Cov_Q_inv)
+            w_U[i] = np.sum(Cov_U_inv[i,:])/np.sum(Cov_U_inv)
+    
+    
+        cmb_Q = np.dot(w_Q, total_Q); cmb_U = np.dot(w_U, total_U)
+    
+        cmb_I = np.zeros_like(cmb_Q);
+        cmb_ILC_pix = np.row_stack((cmb_I, cmb_Q, cmb_U))
+    
+        return cmb_ILC_pix, (w_Q, w_U)
