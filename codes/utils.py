@@ -147,3 +147,25 @@ def l2(ell):
     
     return ell*(ell+1)/2/np.pi
 
+def Select_fre(ps_in, sel):
+        
+        '''
+        Take some part of the cross power spectrum matrix.
+        ps_in : (Q, Nf, Nf)
+        
+        '''
+        # sel = np.array((1,2,3))
+        n_fre = len(sel); lbin = len(ps_in)
+        ps_out = np.ones((lbin, n_fre, n_fre)); ### selected power spectra
+        
+        for q in range(lbin):
+            x = 0; 
+            for i in (sel):
+                y = 0;
+                for j in (sel):
+                    ps_out[q][x,y] = ps_in[q][i, j];
+                    y += 1;   
+                x += 1;
+                
+        return ps_out
+
