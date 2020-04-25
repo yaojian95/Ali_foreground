@@ -2,7 +2,7 @@ import healpy as hp
 import numpy as np
 from numpy import linalg as LA
 import pymaster as nmt
-import utils.Select_fre as Select_fre
+from utils import Select_fre as Select_fre
 
 class ABS(object):
     
@@ -175,15 +175,17 @@ class ILC_P(object):
     
     '''
     ILC in pixel space to do the foreground removal.
+    
+    signal_map: ((Nf, 3, 12*nside**2))
     '''
     
-    def __init__(self, signal_maps, nl, mask_in):
+    def __init__(self, signal_maps, mask_in,  nl = None):
         
         self.signal = signal_maps; self.nl =nl; # use nl to do the noise debias.nl is from the ensemble average of noise reanlizations
         
         self.mask = mask_in; pix_list = np.arange(len(mask_in)); self.nside = hp.npix2nside(len(mask_in))
         
-        self.avai_index = pix_list[np.where(mask == 1)] # the pixel index of the remained region 
+        self.avai_index = pix_list[np.where(mask_in == 1)] # the pixel index of the remained region 
             
         self.norm = 1.0/len(self.avai_index)
         
@@ -232,3 +234,80 @@ class ILC_P(object):
         cmb_ILC_pix = np.row_stack((cmb_I, cmb_Q, cmb_U))
     
         return cmb_ILC_pix, (w_Q, w_U)
+
+class ILC_we(object):
+    
+    def __init__(self, signal_maps, signal_cl, cl_th, mask_in, nl = None):
+        
+        '''
+        ILC in pixel space for BB maps as input.
+        signal_maps: ((Nf, 12*nside**2))
+        
+        '''
+        
+        self.signal = signal_maps; self.Nf = len(signal_maps); self.nl = nl; # use nl to do the noise debias.nl is from the ensemble average of noise reanlizations
+        self.scl = signal_cl; ## cross power spectrum of the input signal
+        self.cl = cl_th ## to weight the convariance matrix
+        self.lmax = len(cl_th)
+        
+    def run(self):
+        e = np.matrix(np.ones((1,3)))
+        Nf = self.Nf
+        A_BB = np.matrix(np.zeros((Nf, Nf)));
+        for i in range(Nf):
+            for j in range(Nf):
+                
+                for l in range(2, self.lmax):
+                    A_BB[i,j] += self.scl[l][i,j]*1.0/self.cl[l]*(2*l +1)
+        
+        A_inv = np.linalg.pinv(A_BB)
+        
+        w = np.array( e*A_inv/(e*A_inv*e.T) )
+        
+        cmb_clean = np.dot(w, self.signal)
+        
+        return cmb_clean, w
+        
+
+class ILC_BB(object):
+    
+    def __init__(self, signal_maps, mask_in, nl = None):
+        
+        '''
+        ILC in pixel space for BB maps as input.
+        signal_maps: ((Nf, 12*nside**2))
+        
+        '''
+        
+        self.signal = signal_maps; self.nl = nl; # use nl to do the noise debias.nl is from the ensemble average of noise reanlizations
+   
+        self.mask = mask_in; pix_list = np.arange(len(mask_in)); self.nside = hp.npix2nside(len(mask_in))
+        
+        self.avai_index = pix_list[np.where(mask_in == 1)] # the pixel index of the remained region 
+            
+        self.norm = 1.0/len(self.avai_index)
+        
+    def run(self): 
+       
+        Nf = len(self.signal)
+        
+        total_BB = self.signal;
+    
+        Cov_BB = np.zeros((Nf, Nf));  w_BB = np.zeros(Nf)
+
+        for i in range(Nf):
+            for j in range(Nf):
+                
+                tb_i = total_BB[i][self.avai_index] - np.mean(total_BB[i][self.avai_index]);
+                tb_j = total_BB[j][self.avai_index] - np.mean(total_BB[j][self.avai_index])
+                
+                Cov_BB[i, j] = np.dot(tb_i, tb_j)*self.norm
+
+        Cov_BB_inv = np.linalg.pinv(Cov_BB)  
+    
+        for i in range(Nf):
+            w_BB[i] = np.sum(Cov_BB_inv[i,:])/np.sum(Cov_BB_inv)
+           
+        cmb_BB = np.dot(w_BB, total_BB); 
+    
+        return cmb_BB, w_BB
