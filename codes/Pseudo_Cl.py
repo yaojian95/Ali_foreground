@@ -13,6 +13,7 @@ class Pseudo_Cl(object):
         '''
         Define the **apodized mask**, **beam weights**, **nside**, **bin-scheme**, **ell**
         
+        Needs to be revised for the beam correction
         '''
         self.mask = nmt.mask_apodization(mask_in, 6, apotype='C2')
         
@@ -20,7 +21,7 @@ class Pseudo_Cl(object):
         
 #         self.beam = hp.gauss_beam(beam/60/180*np.pi, lmax = 3*self.nside); 
         
-        self.b = nmt.NmtBin(self.nside, nlb=bin_w, lmax=self.lmax)
+        self.b = nmt.NmtBin(self.nside, nlb=bin_w, lmax=self.lmax, is_Dell = True)
         
         self.ell_n = self.b.get_effective_ells(); self.lbin = len(self.ell_n)
 
@@ -36,7 +37,7 @@ class Pseudo_Cl(object):
     def Cross_TT(self, maps):
     
         ''' 
-            revised for upper-triangle of the matrix 
+        revised for upper-triangle of the matrix 
 
         Input: spin-1 maps; Only multi-frequency TT maps; Or BB maps by LH's method;
         This function doesn't need *purify_B = True*
